@@ -1,0 +1,5 @@
+streamlit
+streamlit-aggrid
+pulp
+pandas
+openpyxl
