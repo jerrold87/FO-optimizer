@@ -101,10 +101,15 @@ def run_optimization(uploaded_file) -> tuple:
     grade_hdr = _find_row('Grade Name')
     spec_hdr  = _find_row('Property')
 
-    # Components: read from header row; stop at TOTAL row
-    df_comp = pd.read_excel(uploaded_file, sheet_name='input', skiprows=comp_hdr)
-    total_idx = df_comp[df_comp['Tank Name'] == 'TOTAL'].index[0]
-    df_comp = df_comp.iloc[:total_idx].set_index('Tank Name')
+    # Components: read from header row; stop at first blank Tank Name
+    df_comp_raw = pd.read_excel(uploaded_file, sheet_name='input', skiprows=comp_hdr)
+    na_mask = df_comp_raw['Tank Name'].isna()
+    blank_idx = int(na_mask.idxmax()) if na_mask.any() else len(df_comp_raw)
+    df_comp = df_comp_raw.iloc[:blank_idx].set_index('Tank Name')
+
+    # df_comp = pd.read_excel(uploaded_file, sheet_name='input', skiprows=comp_hdr)
+    # total_idx = df_comp[df_comp['Tank Name'] == 'TOTAL'].index[0]
+    # df_comp = df_comp.iloc[:total_idx].set_index('Tank Name')
 
     # Grades: read from header row; stop at first blank Grade Name
     df_grades_raw = pd.read_excel(uploaded_file, sheet_name='input', skiprows=grade_hdr)

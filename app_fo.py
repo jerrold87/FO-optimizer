@@ -57,7 +57,7 @@ if uploaded:
                 summary_display.style
                     .format("{:,.3f}", subset=["Mass (MT)", "Volume (m³)"])
                     .format("${:,.2f}", subset=["Value ($)", "Cost ($)", "Profit ($)"]),
-                use_container_width=True,
+                width='stretch',
             )
 
             # ----------------------------------------------------------
@@ -67,7 +67,7 @@ if uploaded:
             st.dataframe(df.style
                     .format("{:,.3f}", subset=["Mass_MT", "Volume_m3"])
                     .format("${:,.2f}", subset=["Unit_Cost", "Total_Cost"]),
-                use_container_width=True,
+                width='stretch',
             )
             #st.download_button(
             #    label="Download Results as CSV",
@@ -91,7 +91,7 @@ if uploaded:
                     st.dataframe(
                         grade_df.set_index("Property")[["Blended", "Min", "Max"]]
                             .style.apply(_highlight_spec, axis=1),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
             # ----------------------------------------------------------
@@ -101,7 +101,7 @@ if uploaded:
             vol_cols = ["Before (Min)", "Before (Max)", "Used (Blend)", "After (Min)", "After (Max)"]
             st.dataframe(
                 df_comp_summary.style.format("{:,.3f}", subset=vol_cols),
-                use_container_width=True,
+                width='stretch',
             )
 
 
