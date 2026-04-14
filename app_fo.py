@@ -53,10 +53,12 @@ if uploaded:
             summary_display.columns = [
                 "Mass (MT)", "Volume (m³)", "Profit ($)", "Value ($)", "Cost ($)"
             ]
+            summary_display["$ / Mass (MT)"] = summary_display["Cost ($)"] / summary_display["Mass (MT)"]
             st.dataframe(
                 summary_display.style
                     .format("{:,.3f}", subset=["Mass (MT)", "Volume (m³)"])
-                    .format("${:,.2f}", subset=["Value ($)", "Cost ($)", "Profit ($)"]),
+                    .format("${:,.2f}", subset=["Value ($)", "Cost ($)", "Profit ($)"])
+                    .format("${:,.2f}", subset=["$ / Mass (MT)"]),
                 width='stretch',
             )
 
@@ -64,9 +66,20 @@ if uploaded:
             # Components Usage
             # ----------------------------------------------------------
             st.subheader("Components Usage")
-            st.dataframe(df.style
-                    .format("{:,.3f}", subset=["Mass_MT", "Volume_m3"])
-                    .format("${:,.2f}", subset=["Unit_Cost", "Total_Cost"]),
+            comp_display = df.copy()
+            comp_display["% (MT)"] = comp_display["Mass_MT"] / comp_display.groupby("Grade")["Mass_MT"].transform("sum")
+            cols = ["Grade", "Tank", "% (MT)", "Mass_MT", "Volume_m3", "Unit_Cost", "Total_Cost"]
+            comp_display = comp_display[cols].rename(columns={
+                "Mass_MT":    "Mass (MT)",
+                "Volume_m3":  "Volume (m³)",
+                "Unit_Cost":  "Unit Cost ($)",
+                "Total_Cost": "Total Cost ($)",
+            })
+            st.dataframe(
+                comp_display.style
+                    .format("{:,.3f}", subset=["Mass (MT)", "Volume (m³)"])
+                    .format("${:,.2f}", subset=["Unit Cost ($)", "Total Cost ($)"])
+                    .format("{:.1%}", subset=["% (MT)"]),
                 width='stretch',
             )
             #st.download_button(
