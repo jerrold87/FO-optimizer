@@ -16,6 +16,12 @@ Non-linear properties handled by linearising through an index:
                  Blend PPBI linearly by volume fraction, back-convert for display:
                  t_blend = 273.15 × (PPBI_blend^(1/12.5) − 1)
 
+  Flash Point – Hu-Burns Blending Index
+                 FPBI(t) = exp(-0.06 × (t × 9/5 + 32))   [t in °C, internally in °F]
+                 Blend FPBI linearly by volume fraction, back-convert for display:
+                 t_blend = (ln(FPBI_blend) / (-0.06) − 32) × 5/9
+                 NOTE: FPBI decreases as T increases → LP inequality directions are reversed
+
 Both approaches reduce the non-linear blending constraint to a linear LP constraint:
   Σ INDEX_i · vol_i  ≥/≤  INDEX_limit · Σ vol_i
 which is linear in the mass decision variables (since vol_i = mass_i / density_i).
@@ -51,6 +57,16 @@ def _ppbi(t: float) -> float:
 def _ppbi_inv(x: float) -> float:
     """Back-convert PPBI to pour point (°C)."""
     return 273.15 * (x ** (1.0 / 12.5) - 1.0)
+
+
+def _fpbi(t_c: float) -> float:
+    """Hu-Burns Flash Point Blending Index. t_c in °C."""
+    return math.exp(-0.06 * (t_c * 9.0 / 5.0 + 32.0))
+
+
+def _fpbi_inv(x: float) -> float:
+    """Back-convert Hu-Burns FPBI to flash point (°C)."""
+    return (math.log(x) / (-0.06) - 32.0) * 5.0 / 9.0
 
 
 def _gcv(density: float, water: float, ash: float, sulfur: float) -> float:
@@ -137,6 +153,7 @@ def run_optimization(uploaded_file) -> tuple:
     # Pre-compute Refutas Blending Number and Pour Point Blending Index for each component
     rfn_comp  = {c: _refutas(df_comp.loc[c, 'Viscosity']) for c in components}
     ppbi_comp = {c: _ppbi(df_comp.loc[c, 'Pour'])         for c in components}
+    fpbi_comp = {c: _fpbi(df_comp.loc[c, 'Flash'])        for c in components}
 
     # Pre-compute per-component CCAI only when it appears in the spec sheet
     ccai_comp = (
@@ -160,7 +177,7 @@ def run_optimization(uploaded_file) -> tuple:
     )
 
     # Identify non-linear properties (handled separately)
-    NL_PROPS = {'Viscosity', 'Pour'}
+    NL_PROPS = {'Viscosity', 'Pour', 'Flash'}
 
     # ------------------------------------------------------------------
     # 3. Build LP
@@ -212,6 +229,14 @@ def run_optimization(uploaded_file) -> tuple:
                     prob += ppbi_expr >= _ppbi(spec_min) * total_vol_g
                 if pd.notnull(spec_max):
                     prob += ppbi_expr <= _ppbi(spec_max) * total_vol_g
+
+            elif p == 'Flash':
+                # --- Hu-Burns constraint (volume-weighted, reversed inequalities) ---
+                fpbi_expr = lpSum(fpbi_comp[c] * vc[c] * blend[g][c] for c in components)
+                if pd.notnull(spec_min):
+                    prob += fpbi_expr <= _fpbi(spec_min) * total_vol_g  # FPBI↓ as T↑
+                if pd.notnull(spec_max):
+                    prob += fpbi_expr >= _fpbi(spec_max) * total_vol_g  # FPBI↓ as T↑
 
             elif p == 'Density':
                 # --- Density: volume-weighted ---
@@ -309,6 +334,9 @@ def run_optimization(uploaded_file) -> tuple:
                     elif p == 'Pour':
                         ppbi_blend = sum(ppbi_comp[c] * vol_vals[c] for c in components) / total_vol
                         blended_val = round(_ppbi_inv(ppbi_blend), 4)
+                    elif p == 'Flash':
+                        fpbi_blend = sum(fpbi_comp[c] * vol_vals[c] for c in components) / total_vol
+                        blended_val = round(_fpbi_inv(fpbi_blend), 4)
                     elif p == 'Density':
                         blended_val = round(
                             sum(df_comp.loc[c, p] * vol_vals[c] for c in components) / total_vol, 4
