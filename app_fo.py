@@ -54,6 +54,7 @@ if uploaded:
                 "Mass (MT)", "Volume (m³)", "Profit ($)", "Value ($)", "Cost ($)"
             ]
             summary_display["$ / Mass (MT)"] = summary_display["Cost ($)"] / summary_display["Mass (MT)"]
+            summary_display = summary_display[["$ / Mass (MT)", "Mass (MT)", "Volume (m³)", "Profit ($)", "Value ($)", "Cost ($)"]]
             st.dataframe(
                 summary_display.style
                     .format("{:,.3f}", subset=["Mass (MT)", "Volume (m³)"])
