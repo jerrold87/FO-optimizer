@@ -1,3 +1,5 @@
+import io
+
 import pandas as pd
 import streamlit as st
 
@@ -118,7 +120,31 @@ if uploaded:
                 width='stretch',
             )
 
+            # ----------------------------------------------------------
+            # Download
+            # ----------------------------------------------------------
+            st.divider()
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                summary_display.to_excel(writer, sheet_name="Blend Summary")
+                comp_display.to_excel(writer, sheet_name="Components Usage", index=False)
+                (
+                    df_specs_display[["Grade", "Property", "Blended", "Min", "Max"]]
+                    .to_excel(writer, sheet_name="Blend Specifications", index=False)
+                )
+                df_comp_summary.to_excel(writer, sheet_name="Tank Summary")
 
+            scenario_name = st.text_input(
+                "Blend Plan",
+                placeholder="Enter a name for this blend plan…",
+            )
+            file_name = f"{scenario_name.strip()}.xlsx" if scenario_name.strip() else "blend_plan_results.xlsx"
+            st.download_button(
+                label="Download Results as Excel",
+                data=buf.getvalue(),
+                file_name=file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
         else:
             st.error(f"Solver returned status: **{status}**. No optimal solution found.")
