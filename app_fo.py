@@ -23,7 +23,8 @@ st.title("Fuel Oil Blending Optimizer")
 st.caption(
     "Upload your Fuel Oil input Excel file to solve the blending LP and download results. "
     "Tank min/max are in Metric Tons (MT). Viscosity uses Refutas Blending Number; "
-    "Pour Point uses Pour Point Blending Index — both keep the LP fully linear."
+    "Pour Point uses Pour Point Blending Index; " 
+    "Flash Point uses Hu-Burns Blending Index — keeping the LP fully linear."
 )
 
 uploaded = st.file_uploader("Upload input Excel (.xlsx)", type=["xlsx"])
