@@ -3,7 +3,7 @@ import io
 import pandas as pd
 import streamlit as st
 
-from blend_fo import run_optimization
+from blend_fo import load_input_tables, run_optimization
 
 
 def _highlight_spec(row):
@@ -30,10 +30,47 @@ st.caption(
 uploaded = st.file_uploader("Upload input Excel (.xlsx)", type=["xlsx"])
 
 if uploaded:
+    # Load raw input tables once per file; re-read when a new file is uploaded
+    if st.session_state.get("fo_input_file") != uploaded.name:
+        df_comp_raw, df_grades_raw, df_specs_raw = load_input_tables(uploaded)
+        st.session_state["fo_input_raw"] = (
+            df_comp_raw.reset_index(),
+            df_grades_raw.reset_index(),
+            df_specs_raw.reset_index(),
+        )
+        st.session_state["fo_input_file"] = uploaded.name
+
+    df_comp_init, df_grades_init, df_specs_init = st.session_state["fo_input_raw"]
+
+    with st.expander("Input Data (review & edit before running)", expanded=True):
+        tab_comp, tab_grades, tab_specs = st.tabs(["Components", "Grades", "Specs"])
+
+        with tab_comp:
+            edited_comp = st.data_editor(
+                df_comp_init, num_rows="dynamic", use_container_width=True, key="editor_comp"
+            )
+
+        with tab_grades:
+            edited_grades = st.data_editor(
+                df_grades_init, num_rows="dynamic", use_container_width=True, key="editor_grades"
+            )
+
+        with tab_specs:
+            edited_specs = st.data_editor(
+                df_specs_init, num_rows="dynamic", use_container_width=True, key="editor_specs"
+            )
+
     if st.button("Run Optimization", type="primary"):
         with st.spinner("Solving…"):
             try:
-                st.session_state["fo_opt_results"] = run_optimization(uploaded)
+                df_comp_in   = edited_comp.set_index("Tank Name").dropna(how="all")
+                df_grades_in = edited_grades.set_index("Grade Name").dropna(how="all")
+                df_specs_in  = edited_specs.set_index("Property").dropna(how="all")
+                st.session_state["fo_opt_results"] = run_optimization(
+                    preloaded_comp=df_comp_in,
+                    preloaded_grades=df_grades_in,
+                    preloaded_specs=df_specs_in,
+                )
             except Exception as e:
                 st.error(f"Failed to run model: {e}")
                 st.stop()
@@ -79,13 +116,18 @@ if uploaded:
                 "Unit_Cost":  "Unit Cost ($)",
                 "Total_Cost": "Total Cost ($)",
             })
-            st.dataframe(
-                comp_display.style
-                    .format("{:,.3f}", subset=["Mass (MT)", "Volume (m³)"])
-                    .format("${:,.2f}", subset=["Unit Cost ($)", "Total Cost ($)"])
-                    .format("{:.1%}", subset=["% (MT)"]),
-                width='stretch',
-            )
+            comp_grades = list(comp_display["Grade"].unique())
+            comp_tabs = st.tabs(comp_grades)
+            for tab, grade in zip(comp_tabs, comp_grades):
+                with tab:
+                    grade_comp = comp_display[comp_display["Grade"] == grade].drop(columns="Grade").reset_index(drop=True)
+                    st.dataframe(
+                        grade_comp.style
+                            .format("{:,.3f}", subset=["Mass (MT)", "Volume (m³)"])
+                            .format("${:,.2f}", subset=["Unit Cost ($)", "Total Cost ($)"])
+                            .format("{:.1%}", subset=["% (MT)"]),
+                        width='stretch',
+                    )
             #st.download_button(
             #    label="Download Results as CSV",
             #    data=df.to_csv(index=False),

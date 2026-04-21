@@ -84,26 +84,14 @@ def _gcv(density: float, water: float, ash: float, sulfur: float) -> float:
 # Main optimisation function
 # ---------------------------------------------------------------------------
 
-def run_optimization(uploaded_file) -> tuple:
+def load_input_tables(uploaded_file):
+    """Read the three input sections from the Excel file.
+
+    Returns (df_comp, df_grades, df_specs) each indexed as the optimizer expects:
+        df_comp   – indexed by 'Tank Name'
+        df_grades – indexed by 'Grade Name'
+        df_specs  – indexed by 'Property'
     """
-    Run the Fuel Oil blending LP optimisation.
-
-    Args:
-        uploaded_file: File-like object or path to the FO input Excel file.
-
-    Returns:
-        6-tuple:
-            df_results       – Grade/Component blend table (empty if infeasible)
-            total_profit     – float (0.0 if infeasible)
-            status           – solver status string, e.g. 'Optimal'
-            df_blend_specs   – blended property values vs. spec limits per grade
-            df_grade_summary – per-grade mass, volume, value, cost, profit
-            df_comp_summary  – per-component before/after inventory + properties
-    """
-
-    # ------------------------------------------------------------------
-    # 1. Data loading — auto-detect section header rows
-    # ------------------------------------------------------------------
     df_raw = pd.read_excel(uploaded_file, sheet_name='input', header=None)
 
     def _find_row(sentinel: str) -> int:
@@ -123,10 +111,6 @@ def run_optimization(uploaded_file) -> tuple:
     blank_idx = int(na_mask.idxmax()) if na_mask.any() else len(df_comp_raw)
     df_comp = df_comp_raw.iloc[:blank_idx].set_index('Tank Name')
 
-    # df_comp = pd.read_excel(uploaded_file, sheet_name='input', skiprows=comp_hdr)
-    # total_idx = df_comp[df_comp['Tank Name'] == 'TOTAL'].index[0]
-    # df_comp = df_comp.iloc[:total_idx].set_index('Tank Name')
-
     # Grades: read from header row; stop at first blank Grade Name
     df_grades_raw = pd.read_excel(uploaded_file, sheet_name='input', skiprows=grade_hdr)
     na_mask = df_grades_raw['Grade Name'].isna()
@@ -139,6 +123,44 @@ def run_optimization(uploaded_file) -> tuple:
         .dropna(subset=['Property'])
         .set_index('Property')
     )
+
+    # Drop any empty/unnamed columns produced by blank cells in the Excel sheet
+    for df in (df_comp, df_grades, df_specs):
+        unnamed = [c for c in df.columns if str(c).startswith('Unnamed')]
+        df.drop(columns=unnamed, inplace=True)
+
+    return df_comp, df_grades, df_specs
+
+
+def run_optimization(uploaded_file=None, *,
+                     preloaded_comp=None, preloaded_grades=None, preloaded_specs=None) -> tuple:
+    """
+    Run the Fuel Oil blending LP optimisation.
+
+    Args:
+        uploaded_file: File-like object or path to the FO input Excel file.
+                       Not required when preloaded_* dataframes are supplied.
+        preloaded_comp:   df_comp indexed by 'Tank Name'   (optional)
+        preloaded_grades: df_grades indexed by 'Grade Name' (optional)
+        preloaded_specs:  df_specs indexed by 'Property'   (optional)
+
+    Returns:
+        6-tuple:
+            df_results       – Grade/Component blend table (empty if infeasible)
+            total_profit     – float (0.0 if infeasible)
+            status           – solver status string, e.g. 'Optimal'
+            df_blend_specs   – blended property values vs. spec limits per grade
+            df_grade_summary – per-grade mass, volume, value, cost, profit
+            df_comp_summary  – per-component before/after inventory + properties
+    """
+
+    # ------------------------------------------------------------------
+    # 1. Data loading
+    # ------------------------------------------------------------------
+    if preloaded_comp is not None and preloaded_grades is not None and preloaded_specs is not None:
+        df_comp, df_grades, df_specs = preloaded_comp, preloaded_grades, preloaded_specs
+    else:
+        df_comp, df_grades, df_specs = load_input_tables(uploaded_file)
 
     # ------------------------------------------------------------------
     # 2. Derived constants
