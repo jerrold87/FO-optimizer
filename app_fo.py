@@ -33,9 +33,16 @@ if uploaded:
     # Load raw input tables once per file; re-read when a new file is uploaded
     if st.session_state.get("fo_input_file") != uploaded.name:
         df_comp_raw, df_grades_raw, df_specs_raw = load_input_tables(uploaded)
+
+        df_comp_disp = df_comp_raw.reset_index()
+        df_comp_disp.insert(0, "Include", True)
+
+        df_grades_disp = df_grades_raw.reset_index()
+        df_grades_disp.insert(0, "Include", True)
+
         st.session_state["fo_input_raw"] = (
-            df_comp_raw.reset_index(),
-            df_grades_raw.reset_index(),
+            df_comp_disp,
+            df_grades_disp,
             df_specs_raw.reset_index(),
         )
         st.session_state["fo_input_file"] = uploaded.name
@@ -47,12 +54,14 @@ if uploaded:
 
         with tab_comp:
             edited_comp = st.data_editor(
-                df_comp_init, num_rows="dynamic", use_container_width=True, key="editor_comp"
+                df_comp_init, num_rows="dynamic", use_container_width=True, key=f"editor_comp_{st.session_state.get('editor_comp_ver', 0)}",
+                column_config={"Include": st.column_config.CheckboxColumn("Include", default=True)},
             )
 
         with tab_grades:
             edited_grades = st.data_editor(
-                df_grades_init, num_rows="dynamic", use_container_width=True, key="editor_grades"
+                df_grades_init, num_rows="dynamic", use_container_width=True, key="editor_grades",
+                column_config={"Include": st.column_config.CheckboxColumn("Include", default=True)},
             )
 
         with tab_specs:
@@ -63,8 +72,18 @@ if uploaded:
     if st.button("Run Optimization", type="primary"):
         with st.spinner("Solving…"):
             try:
-                df_comp_in   = edited_comp.set_index("Tank Name").dropna(how="all")
-                df_grades_in = edited_grades.set_index("Grade Name").dropna(how="all")
+                df_comp_in = (
+                    edited_comp[edited_comp["Include"]]
+                    .drop(columns="Include")
+                    .set_index("Tank Name")
+                    .dropna(how="all")
+                )
+                df_grades_in = (
+                    edited_grades[edited_grades["Include"]]
+                    .drop(columns="Include")
+                    .set_index("Grade Name")
+                    .dropna(how="all")
+                )
                 df_specs_in  = edited_specs.set_index("Property").dropna(how="all")
                 st.session_state["fo_opt_results"] = run_optimization(
                     preloaded_comp=df_comp_in,
@@ -162,6 +181,17 @@ if uploaded:
                 df_comp_summary.style.format("{:,.3f}", subset=vol_cols),
                 width='stretch',
             )
+            if st.button("↺ Roll balance: update Components Min/Max from Tank Summary"):
+                updated_comp = edited_comp.copy()
+                for tank, row in df_comp_summary.iterrows():
+                    mask = updated_comp["Tank Name"] == tank
+                    if mask.any():
+                        updated_comp.loc[mask, "Min"] = row["After (Min)"]
+                        updated_comp.loc[mask, "Max"] = row["After (Max)"]
+                _, grades_part, specs_part = st.session_state["fo_input_raw"]
+                st.session_state["fo_input_raw"] = (updated_comp, grades_part, specs_part)
+                st.session_state["editor_comp_ver"] = st.session_state.get("editor_comp_ver", 0) + 1
+                st.rerun()
 
             # ----------------------------------------------------------
             # Download
