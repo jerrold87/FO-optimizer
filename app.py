@@ -328,13 +328,15 @@ else:
                 # ----------------------------------------------------------
                 st.subheader("Blend Summary")
                 summary_display = df_grade_summary.set_index("Grade").copy()
-                summary_display.columns = ["Volume (bbl)", "Value ($)", "Cost ($)", "Profit ($)"]
+                summary_display.columns = ["Volume (bbl)", "Mass (MT)", "Value ($)", "Cost ($)", "Profit ($)"]
+                summary_display["$ / Mass (MT)"]    = summary_display["Cost ($)"] / summary_display["Mass (MT)"]
                 summary_display["$ / Volume (bbl)"] = summary_display["Cost ($)"] / summary_display["Volume (bbl)"]
-                summary_display = summary_display[["$ / Volume (bbl)", "Volume (bbl)", "Profit ($)", "Value ($)", "Cost ($)"]]
+                summary_display = summary_display[["$ / Mass (MT)", "Mass (MT)", "$ / Volume (bbl)", "Volume (bbl)", "Profit ($)", "Value ($)", "Cost ($)"]]
                 st.dataframe(
                     summary_display.style
+                        .format("{:,.3f}", subset=["Mass (MT)"])
                         .format("{:,.2f}", subset=["Volume (bbl)"])
-                        .format("${:,.2f}", subset=["Value ($)", "Cost ($)", "Profit ($)", "$ / Volume (bbl)"]),
+                        .format("${:,.2f}", subset=["Value ($)", "Cost ($)", "Profit ($)", "$ / Mass (MT)", "$ / Volume (bbl)"]),
                     width='stretch',
                 )
 
@@ -343,9 +345,11 @@ else:
                 # ----------------------------------------------------------
                 st.subheader("Components Usage")
                 comp_display = df.copy()
+                comp_display["% (MT)"]  = comp_display["Mass_MT"]    / comp_display.groupby("Grade")["Mass_MT"].transform("sum")
                 comp_display["% (bbl)"] = comp_display["Volume_bbl"] / comp_display.groupby("Grade")["Volume_bbl"].transform("sum")
-                cols = ["Grade", "Tank", "% (bbl)", "Volume_bbl", "Unit_Cost", "Total_Cost"]
+                cols = ["Grade", "Tank", "% (MT)", "Mass_MT", "% (bbl)", "Volume_bbl", "Unit_Cost", "Total_Cost"]
                 comp_display = comp_display[cols].rename(columns={
+                    "Mass_MT":    "Mass (MT)",
                     "Volume_bbl": "Volume (bbl)",
                     "Unit_Cost":  "Unit Cost ($)",
                     "Total_Cost": "Total Cost ($)",
@@ -357,9 +361,10 @@ else:
                         grade_comp = comp_display[comp_display["Grade"] == grade].drop(columns="Grade").reset_index(drop=True)
                         st.dataframe(
                             grade_comp.style
+                                .format("{:,.3f}", subset=["Mass (MT)"])
                                 .format("{:,.2f}", subset=["Volume (bbl)"])
                                 .format("${:,.2f}", subset=["Unit Cost ($)", "Total Cost ($)"])
-                                .format("{:.1%}", subset=["% (bbl)"]),
+                                .format("{:.1%}", subset=["% (MT)", "% (bbl)"]),
                             width='stretch',
                         )
 

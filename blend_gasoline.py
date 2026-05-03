@@ -3,9 +3,12 @@ import pandas as pd
 from pulp import PULP_CBC_CMD, LpMaximize, LpProblem, LpStatus, LpVariable, lpSum, value
 
 
-def _rvpbi(p: float) -> float:
-    """RVP Blending Index (Power 1.25 method). p in psi."""
-    return p ** 1.25
+_KPA_PER_PSI = 6.89476  # 1 psi = 6.89476 kPa
+
+
+def _rvpbi(p_psi: float) -> float:
+    """RVP Blending Index (Power 1.25 method). p_psi must be in psi."""
+    return p_psi ** 1.25
 
 
 def _rvpbi_inv(x: float) -> float:
@@ -98,16 +101,36 @@ def run_optimization(uploaded_file=None, *,
     grades     = df_grades.index.tolist()
     properties = df_specs.index.tolist()
 
-    # Pre-compute per-component Octane (avg of RON & MON) only when it appears in the spec sheet
-    octane_comp = (
+    # Mass conversion coefficient: (bbl → m³) × (Density kg/L − 0.0011) → MT per bbl
+    mass_coeff = {c: 0.158987295 * (df_comp.loc[c, 'Density'] - 0.0011) for c in components}
+
+    # Pre-compute per-component AKI (avg of RON & MON) only when it appears in the spec sheet
+    aki_comp = (
         {c: (df_comp.loc[c, 'RON'] + df_comp.loc[c, 'MON']) / 2.0 for c in components}
-        if 'Octane' in properties else {}
+        if 'AKI' in properties else {}
     )
 
-    # Pre-compute per-component RVP Blending Index only when it appears in the spec sheet
-    rvpbi_comp = (
-        {c: _rvpbi(df_comp.loc[c, 'RVP']) for c in components}
-        if 'RVP' in properties else {}
+    # Pre-compute per-component Sensitivity (RON − MON) only when it appears in the spec sheet
+    sensitivity_comp = (
+        {c: df_comp.loc[c, 'RON'] - df_comp.loc[c, 'MON'] for c in components}
+        if 'Sensitivity' in properties else {}
+    )
+
+    # Pre-compute per-component DriveIndex (T10×1.5 + T50×3 + T90) only when it appears in the spec sheet
+    driveindex_comp = (
+        {c: df_comp.loc[c, 'T10'] * 1.5 + df_comp.loc[c, 'T50'] * 3.0 + df_comp.loc[c, 'T90']
+         for c in components}
+        if 'DriveIndex' in properties else {}
+    )
+
+    # Pre-compute per-component RVP Blending Index — PSI and kPa variants (formula always in PSI)
+    rvpbi_psi_comp = (
+        {c: _rvpbi(df_comp.loc[c, 'RVP_PSI']) for c in components}
+        if 'RVP_PSI' in properties else {}
+    )
+    rvpbi_kpa_comp = (
+        {c: _rvpbi(df_comp.loc[c, 'RVP_kPa'] / _KPA_PER_PSI) for c in components}
+        if 'RVP_kPa' in properties else {}
     )
 
     # ------------------------------------------------------------------
@@ -142,18 +165,44 @@ def run_optimization(uploaded_file=None, *,
         for p in properties:
             min_limit  = df_specs.loc[p, f'{col_prefix} Min']
             max_limit  = df_specs.loc[p, f'{col_prefix} Max']
-            if p == 'Octane':
-                actual_val = lpSum(octane_comp[c] * blend[g][c] for c in components)
+            if p == 'AKI':
+                actual_val = lpSum(aki_comp[c] * blend[g][c] for c in components)
                 if pd.notnull(min_limit):
                     prob += actual_val >= min_limit * total_vol
                 if pd.notnull(max_limit):
                     prob += actual_val <= max_limit * total_vol
-            elif p == 'RVP':
-                rvpbi_expr = lpSum(rvpbi_comp[c] * blend[g][c] for c in components)
+            elif p == 'Sensitivity':
+                actual_val = lpSum(sensitivity_comp[c] * blend[g][c] for c in components)
+                if pd.notnull(min_limit):
+                    prob += actual_val >= min_limit * total_vol
+                if pd.notnull(max_limit):
+                    prob += actual_val <= max_limit * total_vol
+            elif p == 'DriveIndex':
+                actual_val = lpSum(driveindex_comp[c] * blend[g][c] for c in components)
+                if pd.notnull(min_limit):
+                    prob += actual_val >= min_limit * total_vol
+                if pd.notnull(max_limit):
+                    prob += actual_val <= max_limit * total_vol
+            elif p == 'RVP_PSI':
+                rvpbi_expr = lpSum(rvpbi_psi_comp[c] * blend[g][c] for c in components)
                 if pd.notnull(min_limit):
                     prob += rvpbi_expr >= _rvpbi(min_limit) * total_vol
                 if pd.notnull(max_limit):
                     prob += rvpbi_expr <= _rvpbi(max_limit) * total_vol
+            elif p == 'RVP_kPa':
+                rvpbi_expr = lpSum(rvpbi_kpa_comp[c] * blend[g][c] for c in components)
+                if pd.notnull(min_limit):
+                    prob += rvpbi_expr >= _rvpbi(min_limit / _KPA_PER_PSI) * total_vol
+                if pd.notnull(max_limit):
+                    prob += rvpbi_expr <= _rvpbi(max_limit / _KPA_PER_PSI) * total_vol
+            elif p in ('O2', 'Sulfur'):
+                # Mass-weighted: weight by MT = mass_coeff[c] * bbl
+                total_mass = lpSum(mass_coeff[c] * blend[g][c] for c in components)
+                actual_val = lpSum(df_comp.loc[c, p] * mass_coeff[c] * blend[g][c] for c in components)
+                if pd.notnull(min_limit):
+                    prob += actual_val >= min_limit * total_mass
+                if pd.notnull(max_limit):
+                    prob += actual_val <= max_limit * total_mass
             else:
                 actual_val = lpSum(df_comp.loc[c, p] * blend[g][c] for c in components)
                 if pd.notnull(min_limit):
@@ -178,8 +227,9 @@ def run_optimization(uploaded_file=None, *,
                 if vol and vol > 1e-6:
                     results.append({
                         "Grade":      g,
-                        "Tank":  c,
+                        "Tank":       c,
                         "Volume_bbl": round(vol, 2),
+                        "Mass_MT":    round(vol * mass_coeff[c], 3),
                         "Unit_Cost":  df_comp.loc[c, 'Cost'],
                         "Total_Cost": round(vol * df_comp.loc[c, 'Cost'], 2),
                     })
@@ -197,9 +247,11 @@ def run_optimization(uploaded_file=None, *,
             total_cost = sum(df_comp.loc[c, 'Cost'] * vol_vals[c] for c in components)
             total_val  = df_grades.loc[g, 'Price'] * total_vol
 
+            total_mass = sum(vol_vals[c] * mass_coeff[c] for c in components)
             summary_rows.append({
                 "Grade":            g,
                 "Total_Volume_bbl": round(total_vol,  2),
+                "Total_Mass_MT":    round(total_mass, 3),
                 "Total_Value":      round(total_val,  2),
                 "Total_Cost":       round(total_cost, 2),
                 "Total_Profit":     round(total_val - total_cost, 2),
@@ -207,11 +259,25 @@ def run_optimization(uploaded_file=None, *,
 
             for p in properties:
                 if total_vol > 0:
-                    if p == 'Octane':
-                        blended_val = sum(octane_comp[c] * vol_vals[c] for c in components) / total_vol
-                    elif p == 'RVP':
-                        rvpbi_blend = sum(rvpbi_comp[c] * vol_vals[c] for c in components) / total_vol
+                    if p == 'AKI':
+                        blended_val = sum(aki_comp[c] * vol_vals[c] for c in components) / total_vol
+                    elif p == 'Sensitivity':
+                        blended_val = sum(sensitivity_comp[c] * vol_vals[c] for c in components) / total_vol
+                    elif p == 'DriveIndex':
+                        blended_val = sum(driveindex_comp[c] * vol_vals[c] for c in components) / total_vol
+                    elif p == 'RVP_PSI':
+                        rvpbi_blend = sum(rvpbi_psi_comp[c] * vol_vals[c] for c in components) / total_vol
                         blended_val = _rvpbi_inv(rvpbi_blend)
+                    elif p == 'RVP_kPa':
+                        rvpbi_blend = sum(rvpbi_kpa_comp[c] * vol_vals[c] for c in components) / total_vol
+                        blended_val = _rvpbi_inv(rvpbi_blend) * _KPA_PER_PSI
+                    elif p in ('O2', 'Sulfur'):
+                        mass_vals  = {c: vol_vals[c] * mass_coeff[c] for c in components}
+                        total_mass = sum(mass_vals.values())
+                        blended_val = (
+                            sum(df_comp.loc[c, p] * mass_vals[c] for c in components) / total_mass
+                            if total_mass > 0 else 0.0
+                        )
                     else:
                         blended_val = sum(df_comp.loc[c, p] * vol_vals[c] for c in components) / total_vol
                 else:
@@ -261,7 +327,7 @@ if __name__ == "__main__":
     import os
     import sys
 
-    file_path = r"C:\Users\jerro\OneDrive\Desktop\Python\Datafile\input-gasoline.xlsx"
+    file_path = r"C:\Users\jerro\OneDrive\Desktop\Python\Datafile\input-gasoline.v2.xlsx"
     if not os.path.exists(file_path):
         print(f"Error: {file_path} not found.")
         sys.exit(1)
