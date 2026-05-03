@@ -327,7 +327,7 @@ if __name__ == "__main__":
     import os
     import sys
 
-    file_path = r"C:\Users\jerro\OneDrive\Desktop\Python\Datafile\input-gasoline.v2.xlsx"
+    file_path = "input-gasoline.xlsx"
     if not os.path.exists(file_path):
         print(f"Error: {file_path} not found.")
         sys.exit(1)
