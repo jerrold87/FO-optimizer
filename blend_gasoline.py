@@ -159,11 +159,12 @@ def run_optimization(uploaded_file=None, *,
     prob = LpProblem("Gasoline_Blending_Optimization", LpMaximize)
 
     # Decision Variables: barrels of component 'c' used in grade 'g'
-    def _var(name):
-        v = pulp.LpVariable(name)
-        v.lowBound = 0
-        return v
-    blend = {g: {c: _var(f"v_{g}_{c}") for c in components} for g in grades}
+    blend = {g: {c: pulp.LpVariable(f"v_{g}_{c}") for c in components} for g in grades}
+
+    # Non-negativity (avoids setting lowBound on the variable object directly)
+    for _g in grades:
+        for _c in components:
+            prob += blend[_g][_c] >= 0
 
     # Objective: Maximize Revenue - Cost
     revenue = lpSum(df_grades.loc[g, 'Price'] * lpSum(blend[g][c] for c in components) for g in grades)
