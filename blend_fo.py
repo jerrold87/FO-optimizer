@@ -227,7 +227,8 @@ def run_optimization(uploaded_file=None, *,
     prob = LpProblem("FuelOil_Blending_Optimization", LpMaximize)
 
     # Decision variables: mass of component c blended into grade g  [MT]
-    blend = {g: {c: pulp.LpVariable(f"m_{g}_{c}") for c in components} for g in grades}
+    def _safe(s): return str(s).replace(' ', '_').replace('/', '_')
+    blend = {g: {c: pulp.LpVariable(f"m_{_safe(g)}_{_safe(c)}") for c in components} for g in grades}
 
     # Non-negativity (avoids setting lowBound on the variable object directly)
     for _g in grades:
