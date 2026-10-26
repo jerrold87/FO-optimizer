@@ -227,7 +227,7 @@ def run_optimization(uploaded_file=None, *,
     prob = LpProblem("FuelOil_Blending_Optimization", LpMaximize)
 
     # Decision variables: mass of component c blended into grade g  [MT]
-    blend = LpVariable.dicts("m", (grades, components), lowBound=0)
+    blend = {g: {c: pulp.LpVariable(f"m_{g}_{c}", lowBound=0) for c in components} for g in grades}
 
     # Objective: Maximise Revenue − Cost  ($/MT basis)
     revenue = lpSum(
