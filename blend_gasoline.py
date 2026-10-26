@@ -1,6 +1,17 @@
 
 import pandas as pd
-from pulp import PULP_CBC_CMD, LpMaximize, LpProblem, LpStatus, LpVariable, lpSum, value
+import pulp
+from pulp import LpMaximize, LpProblem, LpStatus, LpVariable, lpSum, value
+
+
+def _get_solver():
+    """Best available LP solver with suppressed output. Tries CBC then HiGHS."""
+    for name in ('PULP_CBC_CMD', 'HiGHS'):
+        try:
+            return pulp.getSolver(name, msg=False)
+        except Exception:
+            continue
+    return None
 
 
 _KPA_PER_PSI = 6.89476  # 1 psi = 6.89476 kPa
@@ -213,7 +224,7 @@ def run_optimization(uploaded_file=None, *,
     # ------------------------------------------------------------------
     # 4. Solve
     # ------------------------------------------------------------------
-    prob.solve(PULP_CBC_CMD(msg=False))
+    prob.solve(_get_solver())
     status = LpStatus[prob.status]
 
     # ------------------------------------------------------------------
