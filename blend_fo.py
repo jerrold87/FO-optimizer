@@ -31,7 +31,16 @@ import math
 
 import pandas as pd
 import pulp
-from pulp import LpMaximize, LpProblem, LpStatus, LpVariable, lpSum, value
+
+LpMaximize = pulp.LpMaximize
+LpProblem  = pulp.LpProblem
+LpVariable = pulp.LpVariable
+lpSum      = pulp.lpSum
+value      = pulp.value
+try:
+    LpStatus = pulp.LpStatus
+except AttributeError:
+    LpStatus = {1: 'Optimal', 0: 'Not Solved', -1: 'Infeasible', -2: 'Unbounded', -3: 'Undefined'}
 
 
 def _get_solver():
